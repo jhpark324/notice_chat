@@ -16,3 +16,7 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.4",
 ]
+
+[tool.mypy]
+files = ["notice_chat", "tests", "main.py"]
+explicit_package_bases = true
