@@ -9,3 +9,8 @@ dependencies = [
     "langgraph>=1.0.9",
     "sqlalchemy>=2.0.44",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
