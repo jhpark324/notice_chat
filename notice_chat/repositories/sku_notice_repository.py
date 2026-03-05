@@ -20,7 +20,9 @@ class SkuNoticeRepository:
         return self.session.scalar(stmt)
 
     def get_by_source_notice_id(self, source_notice_id: int) -> DBSkuNotice | None:
-        stmt = select(DBSkuNotice).where(DBSkuNotice.source_notice_id == source_notice_id)
+        stmt = select(DBSkuNotice).where(
+            DBSkuNotice.source_notice_id == source_notice_id
+        )
         return self.session.scalar(stmt)
 
     def list(
@@ -31,7 +33,9 @@ class SkuNoticeRepository:
         category: str | None = None,
         status: str | None = None,
     ) -> Sequence[DBSkuNotice]:
-        stmt: Select[tuple[DBSkuNotice]] = select(DBSkuNotice).order_by(DBSkuNotice.posted_date.desc(), DBSkuNotice.id.desc())
+        stmt: Select[tuple[DBSkuNotice]] = select(DBSkuNotice).order_by(
+            DBSkuNotice.posted_date.desc(), DBSkuNotice.id.desc()
+        )
         if category is not None:
             stmt = stmt.where(DBSkuNotice.category == category)
         if status is not None:
