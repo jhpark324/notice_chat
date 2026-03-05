@@ -20,3 +20,10 @@ dev = [
 [tool.mypy]
 files = ["notice_chat", "tests", "main.py"]
 explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: 빠른 단위 테스트",
+    "integration: 데이터베이스 등 외부 의존 통합 테스트",
+]
