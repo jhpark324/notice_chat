@@ -7,4 +7,23 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.131.0",
     "langgraph>=1.0.9",
+    "sqlalchemy>=2.0.44",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.4",
+]
+
+[tool.mypy]
+files = ["notice_chat", "tests", "main.py"]
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: 빠른 단위 테스트",
+    "integration: 데이터베이스 등 외부 의존 통합 테스트",
 ]
