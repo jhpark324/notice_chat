@@ -1,32 +1,25 @@
 from __future__ import annotations
 
-from pathlib import Path
+import logging
 
-from notice_chat.models import Base
+from sqlalchemy import text
 
-from .settings import DATABASE_SETTINGS
 from .session import engine
 
-
-def _ensure_sqlite_directory() -> None:
-    prefix = "sqlite+aiosqlite:///"
-    database_url = DATABASE_SETTINGS.url
-
-    if not database_url.startswith(prefix):
-        return
-
-    raw_path = database_url[len(prefix) :]
-    if raw_path in {"", ":memory:"}:
-        return
-
-    Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
+logger = logging.getLogger(__name__)
 
 
 async def init_db() -> None:
-    _ensure_sqlite_directory()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Keep startup lightweight: verify DB connectivity only.
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connectivity check passed")
+    except Exception:
+        logger.exception("Database initialization failed")
+        raise
 
 
 async def close_db() -> None:
     await engine.dispose()
+    logger.info("Database engine disposed")
