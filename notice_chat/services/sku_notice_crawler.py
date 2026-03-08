@@ -49,6 +49,12 @@ def clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def attr_to_str(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    return None
+
+
 def parse_notice_id_from_url(url: str) -> int | None:
     match = re.search(r"/notice/(\d+)", url)
     if match is None:
@@ -115,7 +121,7 @@ class SkuNoticeCrawler:
             if link is None:
                 continue
 
-            href = clean_text(link.get("href"))
+            href = clean_text(attr_to_str(link.get("href")))
             detail_url = urljoin(self.base_url, href).split("?", 1)[0].split("#", 1)[0]
             source_notice_id = parse_notice_id_from_url(detail_url)
             if source_notice_id is None:
@@ -133,8 +139,9 @@ class SkuNoticeCrawler:
 
             info_values: list[str] = []
             for div in row.select("td.post-info .post-info-wrap > div"):
-                classes = div.get("class", [])
-                if "divider" in classes:
+                classes_raw = div.get("class")
+                class_names = classes_raw if isinstance(classes_raw, list) else []
+                if "divider" in class_names:
                     continue
                 info_values.append(clean_text(div.get_text(" ", strip=True)))
 
@@ -200,9 +207,9 @@ class SkuNoticeCrawler:
         image_urls: list[str] = []
         if content_wrap is not None:
             for img in content_wrap.select("img"):
-                src = clean_text(img.get("src") or "")
+                src = clean_text(attr_to_str(img.get("src")) or "")
                 if not src:
-                    srcset = clean_text(img.get("srcset") or "")
+                    srcset = clean_text(attr_to_str(img.get("srcset")) or "")
                     if srcset:
                         src = srcset.split(",", 1)[0].strip().split(" ")[0]
                 if not src:
@@ -214,7 +221,7 @@ class SkuNoticeCrawler:
 
         attachments: list[dict[str, Any]] = []
         for anchor in soup.select(".post-detail-wrap .attachment-wrap a[data-file-key]"):
-            file_key = clean_text(anchor.get("data-file-key") or "").lstrip("/")
+            file_key = clean_text(attr_to_str(anchor.get("data-file-key")) or "").lstrip("/")
             if not file_key:
                 continue
             file_name = clean_text(anchor.get_text(" ", strip=True))

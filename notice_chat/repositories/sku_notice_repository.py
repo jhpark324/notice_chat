@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import Select, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from notice_chat.models import DBSkuNotice
@@ -35,7 +35,7 @@ class SkuNoticeRepository:
         category: str | None = None,
         status: str | None = None,
     ) -> Sequence[DBSkuNotice]:
-        stmt: Select[tuple[DBSkuNotice]] = select(DBSkuNotice).order_by(
+        stmt = select(DBSkuNotice).order_by(
             DBSkuNotice.posted_date.desc(), DBSkuNotice.id.desc()
         )
         if category is not None:
@@ -44,7 +44,7 @@ class SkuNoticeRepository:
             stmt = stmt.where(DBSkuNotice.status == status)
         stmt = stmt.offset(offset).limit(limit)
         result = await self.session.scalars(stmt)
-        return result.all()
+        return list(result.all())
 
     async def create(self, payload: SkuNoticeCreate) -> DBSkuNotice:
         notice = DBSkuNotice(**payload.model_dump())

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Protocol
+from typing import Any, Protocol
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
@@ -39,6 +39,7 @@ class LangChainNoticeSummaryService:
         settings: SkuNoticeSummarySettings | None = None,
     ) -> None:
         resolved_settings = settings or SKU_NOTICE_SUMMARY_SETTINGS
+        self._chain: Any | None = None
         self.max_input_chars = (
             max_input_chars
             if max_input_chars is not None
@@ -55,8 +56,6 @@ class LangChainNoticeSummaryService:
         if os.getenv("OPENAI_API_KEY"):
             llm = ChatOpenAI(model=self.model, temperature=resolved_temperature)
             self._chain = SKU_NOTICE_SUMMARY_PROMPT | llm | StrOutputParser()
-        else:
-            self._chain = None
 
     @staticmethod
     def _format_attachments(notice: CrawledNotice) -> str:
