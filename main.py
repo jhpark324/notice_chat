@@ -21,4 +21,9 @@ async def lifespan(_: FastAPI):
         logger.info("Application shutdown complete")
 
 
-app = FastAPI(lifespan=lifespan)
+def create_app(*, enable_lifespan: bool = True) -> FastAPI:
+    app = FastAPI(lifespan=lifespan if enable_lifespan else None)
+    return app
+
+
+app = create_app()
