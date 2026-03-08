@@ -58,6 +58,20 @@ class _FakeSummaryService:
         return f"summary:{notice.source_notice_id}"
 
 
+class _FakeEmbeddingService:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    async def embed_notice(
+        self,
+        notice: CrawledNotice,
+        *,
+        summary_text: str,  # noqa: ARG002
+    ) -> list[float]:
+        self.calls.append(notice.source_notice_id)
+        return [float(notice.source_notice_id), 0.5]
+
+
 def _build_list_item(notice_id: int) -> ListNoticeItem:
     return ListNoticeItem(
         source_notice_id=notice_id,
@@ -94,6 +108,7 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
     details = [_build_detail(12), _build_detail(11)]
     fake_crawler = _FakeCrawler(list_items=list_items, details=details)
     fake_summary = _FakeSummaryService()
+    fake_embedding = _FakeEmbeddingService()
 
     saved_payloads = []
 
@@ -119,6 +134,7 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
     service = SkuNoticeIngestService(
         crawler=fake_crawler,  # type: ignore[arg-type]
         summary_service=fake_summary,  # type: ignore[arg-type]
+        embedding_service=fake_embedding,  # type: ignore[arg-type]
         default_detail_concurrency=7,
     )
     monkeypatch.setattr(service, "get_db_max_source_notice_id", AsyncMock(return_value=11))
@@ -135,11 +151,15 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
     assert result["crawled_list_rows"] == 3
     assert result["candidate_count"] == 2
     assert result["saved_count"] == 2
+    assert result["embedded_count"] == 2
     assert result["failed"] == []
     assert fake_crawler.list_calls == [4]
     assert fake_crawler.detail_calls == [(2, 3)]
     assert fake_summary.calls == [12, 11]
+    assert fake_embedding.calls == [12, 11]
     assert [payload.source_notice_id for payload in saved_payloads] == [12, 11]
+    assert all(payload.embedding is not None for payload in saved_payloads)
+    assert all(payload.embedding_updated_at is not None for payload in saved_payloads)
 
 
 async def test_run_records_failure_when_summary_raises(
@@ -180,6 +200,7 @@ async def test_run_records_failure_when_summary_raises(
     result = await service.run()
 
     assert result["saved_count"] == 0
+    assert result["embedded_count"] == 0
     assert len(result["failed"]) == 2
     assert result["failed"][0]["stage"] == "summarize"
     assert result["failed"][1]["stage"] == "persist"

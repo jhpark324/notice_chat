@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Date,
+    DateTime,
     Index,
     Integer,
     JSON,
@@ -14,6 +15,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+
+from notice_chat.db.pgvector_type import VectorType
 
 from .base import BaseModel
 
@@ -88,4 +91,14 @@ class DBSkuNotice(BaseModel):
         JSON,
         nullable=True,
         comment="첨부파일 목록(JSON)",
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(
+        VectorType(1536),
+        nullable=True,
+        comment="검색용 임베딩 벡터(pgvector)",
+    )
+    embedding_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="임베딩 갱신 시각",
     )

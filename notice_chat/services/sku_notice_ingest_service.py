@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -13,6 +14,10 @@ from notice_chat.repositories import SkuNoticeRepository
 from notice_chat.schemas import SkuNoticeCreate
 
 from .sku_notice_crawler import CrawledNotice, ListNoticeItem, SkuNoticeCrawler
+from .sku_notice_embedding import (
+    LangChainNoticeEmbeddingService,
+    NoticeEmbeddingService,
+)
 from .sku_notice_summary import LangChainNoticeSummaryService, NoticeSummaryService
 
 logger = logging.getLogger(__name__)
@@ -25,6 +30,7 @@ class SkuNoticeIngestResult:
     crawled_list_rows: int
     candidate_count: int
     saved_count: int
+    embedded_count: int
     failed: list[dict[str, Any]]
 
 
@@ -42,6 +48,7 @@ class SkuNoticeIngestState(TypedDict, total=False):
     crawled_list_rows: int
     candidate_count: int
     saved_count: int
+    embedded_count: int
     failed: list[dict[str, Any]]
 
 
@@ -51,10 +58,12 @@ class SkuNoticeIngestService:
         *,
         crawler: SkuNoticeCrawler | None = None,
         summary_service: NoticeSummaryService | None = None,
+        embedding_service: NoticeEmbeddingService | None = None,
         default_detail_concurrency: int = 5,
     ) -> None:
         self.crawler = crawler or SkuNoticeCrawler()
         self.summary_service = summary_service or LangChainNoticeSummaryService()
+        self.embedding_service = embedding_service or LangChainNoticeEmbeddingService()
         self.default_detail_concurrency = default_detail_concurrency
         self._graph = self._build_graph()
 
@@ -64,7 +73,16 @@ class SkuNoticeIngestService:
             return int(value) if value is not None else 0
 
     @staticmethod
-    def _to_payload(detail: CrawledNotice, summary_text: str) -> SkuNoticeCreate:
+    @staticmethod
+    def _utcnow() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _to_payload(
+        detail: CrawledNotice,
+        summary_text: str,
+        embedding: list[float] | None,
+    ) -> SkuNoticeCreate:
         return SkuNoticeCreate(
             source_notice_id=detail.source_notice_id,
             detail_url=detail.detail_url,
@@ -78,6 +96,10 @@ class SkuNoticeIngestService:
             period_end=detail.period_end,
             summary_text=summary_text,
             attachments=detail.attachments or None,
+            embedding=embedding,
+            embedding_updated_at=(
+                SkuNoticeIngestService._utcnow() if embedding is not None else None
+            ),
         )
 
     @staticmethod
@@ -153,6 +175,7 @@ class SkuNoticeIngestService:
             "candidate_count": len(candidates),
             "failed": [],
             "saved_count": 0,
+            "embedded_count": 0,
         }
 
     async def _summarize_node(
@@ -193,10 +216,12 @@ class SkuNoticeIngestService:
         summaries = state.get("summaries", {})
         failed = list(state.get("failed", []))
         saved_count = 0
+        embedded_count = 0
 
         if not details:
             return {
                 "saved_count": 0,
+                "embedded_count": 0,
                 "failed": failed,
             }
 
@@ -216,7 +241,13 @@ class SkuNoticeIngestService:
                     continue
 
                 try:
-                    payload = self._to_payload(detail, summary_text)
+                    embedding = await self.embedding_service.embed_notice(
+                        detail,
+                        summary_text=summary_text,
+                    )
+                    if embedding is not None:
+                        embedded_count += 1
+                    payload = self._to_payload(detail, summary_text, embedding)
                     await repository.upsert_by_source_notice_id(payload)
                     saved_count += 1
                 except Exception as exc:
@@ -235,6 +266,7 @@ class SkuNoticeIngestService:
 
         return {
             "saved_count": saved_count,
+            "embedded_count": embedded_count,
             "failed": failed,
         }
 
@@ -265,13 +297,15 @@ class SkuNoticeIngestService:
             crawled_list_rows=final_state.get("crawled_list_rows", 0),
             candidate_count=final_state.get("candidate_count", 0),
             saved_count=final_state.get("saved_count", 0),
+            embedded_count=final_state.get("embedded_count", 0),
             failed=final_state.get("failed", []),
         )
         logger.info(
-            "Ingest complete: crawled=%s candidates=%s saved=%s failed=%s",
+            "Ingest complete: crawled=%s candidates=%s saved=%s embedded=%s failed=%s",
             result.crawled_list_rows,
             result.candidate_count,
             result.saved_count,
+            result.embedded_count,
             len(result.failed),
         )
         return asdict(result)

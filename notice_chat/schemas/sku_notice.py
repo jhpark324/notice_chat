@@ -36,6 +36,11 @@ class SkuNoticeRequiredFields(SkuNoticeBase):
         default=None,
         description="첨부파일 목록(JSON)",
     )
+    embedding: list[float] | None = Field(default=None, description="임베딩 벡터")
+    embedding_updated_at: datetime | None = Field(
+        default=None,
+        description="임베딩 갱신 시각",
+    )
 
 
 class SkuNoticeCreate(SkuNoticeRequiredFields):
@@ -68,6 +73,11 @@ class SkuNoticeUpdate(SkuNoticeBase):
     summary_text: str | None = Field(default=None, description="공지 요약 텍스트")
     attachments: list[dict[str, Any]] | None = Field(
         default=None, description="첨부파일 목록(JSON)"
+    )
+    embedding: list[float] | None = Field(default=None, description="임베딩 벡터")
+    embedding_updated_at: datetime | None = Field(
+        default=None,
+        description="임베딩 갱신 시각",
     )
 
 
