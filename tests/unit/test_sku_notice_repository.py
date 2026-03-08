@@ -89,6 +89,28 @@ async def test_list_returns_filtered_notice_list(session_mock: AsyncMock) -> Non
     scalar_result.all.assert_called_once()
 
 
+async def test_search_text_tokenizes_multi_word_query(session_mock: AsyncMock) -> None:
+    repo = SkuNoticeRepository(session=session_mock)
+
+    scalar_result = MagicMock()
+    scalar_result.all.return_value = []
+    session_mock.scalars.return_value = scalar_result
+
+    await repo.search_text(query="장학금 신청", limit=20)
+
+    stmt = session_mock.scalars.await_args.args[0]
+    compiled = stmt.compile()
+    pattern_values = [
+        value
+        for value in compiled.params.values()
+        if isinstance(value, str) and value.startswith("%") and value.endswith("%")
+    ]
+
+    assert pattern_values.count("%장학금%") == 2
+    assert pattern_values.count("%신청%") == 2
+    assert "%장학금 신청%" not in pattern_values
+
+
 async def test_create_adds_and_commits_notice(
     session_mock: AsyncMock,
     create_payload: SkuNoticeCreate,

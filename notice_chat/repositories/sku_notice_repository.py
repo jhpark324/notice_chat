@@ -60,9 +60,14 @@ class SkuNoticeRepository:
     ) -> Sequence[DBSkuNotice]:
         stmt = select(DBSkuNotice)
 
-        normalized_query = query.strip()
-        if normalized_query:
-            pattern = f"%{normalized_query}%"
+        tokens: list[str] = []
+        for raw_token in query.strip().split():
+            token = raw_token.strip()
+            if token and token not in tokens:
+                tokens.append(token)
+
+        for token in tokens:
+            pattern = f"%{token}%"
             stmt = stmt.where(
                 or_(
                     DBSkuNotice.title.ilike(pattern),
