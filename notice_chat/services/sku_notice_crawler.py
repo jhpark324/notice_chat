@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -41,6 +41,13 @@ class CrawledNotice:
     raw_text: str
     image_urls: list[str]
     attachments: list[dict[str, Any]]
+
+
+@dataclass(slots=True)
+class CrawlDetailFailure:
+    source_notice_id: int
+    detail_url: str
+    error: str
 
 
 def clean_text(value: str | None) -> str:
@@ -273,13 +280,37 @@ class SkuNoticeCrawler:
         items: list[ListNoticeItem],
         *,
         concurrency: int = 5,
-    ) -> list[CrawledNotice]:
+    ) -> tuple[list[CrawledNotice], list[CrawlDetailFailure]]:
         semaphore = asyncio.Semaphore(concurrency)
 
         async def crawl_one(item: ListNoticeItem) -> CrawledNotice:
-            async with semaphore:
-                html = await self.fetch_html(client, item.detail_url)
-                return self.parse_detail_page(html, item)
+            try:
+                async with semaphore:
+                    html = await self.fetch_html(client, item.detail_url)
+                    return self.parse_detail_page(html, item)
+            except Exception:
+                logger.exception(
+                    "Detail crawl failed source_notice_id=%s detail_url=%s",
+                    item.source_notice_id,
+                    item.detail_url,
+                )
+                raise
 
         tasks = [crawl_one(item) for item in items]
-        return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        details: list[CrawledNotice] = []
+        failed: list[CrawlDetailFailure] = []
+        for item, result in zip(items, results, strict=True):
+            if isinstance(result, BaseException):
+                failed.append(
+                    CrawlDetailFailure(
+                        source_notice_id=item.source_notice_id,
+                        detail_url=item.detail_url,
+                        error=repr(result),
+                    )
+                )
+                continue
+            details.append(cast(CrawledNotice, result))
+
+        return details, failed

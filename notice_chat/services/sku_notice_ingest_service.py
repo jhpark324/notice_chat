@@ -86,7 +86,6 @@ class SkuNoticeIngestService:
             return {int(value) for value in result.all()}
 
     @staticmethod
-    @staticmethod
     def _utcnow() -> datetime:
         return datetime.now(timezone.utc)
 
@@ -183,15 +182,25 @@ class SkuNoticeIngestService:
                 lookback_notice_id=lookback_notice_id,
                 max_candidates=max_candidates,
             )
-            details = (
+            details, crawl_failed = (
                 await self.crawler.crawl_notice_details(
                     client,
                     candidates,
                     concurrency=detail_concurrency,
                 )
                 if candidates
-                else []
+                else ([], [])
             )
+
+        crawl_failures: list[dict[str, Any]] = [
+            {
+                "stage": "crawl",
+                "source_notice_id": failure.source_notice_id,
+                "detail_url": failure.detail_url,
+                "error": failure.error,
+            }
+            for failure in crawl_failed
+        ]
 
         return {
             "db_max_source_notice_id": db_max_id,
@@ -201,7 +210,7 @@ class SkuNoticeIngestService:
             "details": details,
             "crawled_list_rows": len(list_items),
             "candidate_count": len(candidates),
-            "failed": [],
+            "failed": crawl_failures,
             "saved_count": 0,
             "embedded_count": 0,
         }

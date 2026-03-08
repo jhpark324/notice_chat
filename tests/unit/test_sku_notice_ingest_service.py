@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from unittest.mock import AsyncMock
 
@@ -20,9 +21,15 @@ class _DummyClientContext:
 
 
 class _FakeCrawler:
-    def __init__(self, list_items: list[ListNoticeItem], details: list[CrawledNotice]) -> None:
+    def __init__(
+        self,
+        list_items: list[ListNoticeItem],
+        details: list[CrawledNotice],
+        crawl_failures: list["_FakeCrawlFailure"] | None = None,
+    ) -> None:
         self._list_items = list_items
         self._details = details
+        self._crawl_failures = crawl_failures or []
         self.list_calls: list[int] = []
         self.detail_calls: list[tuple[int, int]] = []
 
@@ -44,9 +51,16 @@ class _FakeCrawler:
         items: list[ListNoticeItem],
         *,
         concurrency: int,
-    ) -> list[CrawledNotice]:
+    ) -> tuple[list[CrawledNotice], list["_FakeCrawlFailure"]]:
         self.detail_calls.append((len(items), concurrency))
-        return self._details
+        return self._details, self._crawl_failures
+
+
+@dataclass(slots=True)
+class _FakeCrawlFailure:
+    source_notice_id: int
+    detail_url: str
+    error: str
 
 
 class _FakeSummaryService:
@@ -242,3 +256,65 @@ async def test_run_records_failure_when_summary_raises(
     assert len(result["failed"]) == 2
     assert result["failed"][0]["stage"] == "summarize"
     assert result["failed"][1]["stage"] == "persist"
+
+
+async def test_run_keeps_processing_when_some_detail_crawls_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    list_items = [_build_list_item(30), _build_list_item(29)]
+    details = [_build_detail(30)]
+    crawl_failures = [
+        _FakeCrawlFailure(
+            source_notice_id=29,
+            detail_url="https://www.skuniv.ac.kr/notice/29",
+            error="httpx.ConnectError('boom')",
+        )
+    ]
+    fake_crawler = _FakeCrawler(
+        list_items=list_items,
+        details=details,
+        crawl_failures=crawl_failures,
+    )
+    fake_summary = _FakeSummaryService()
+    fake_embedding = _FakeEmbeddingService()
+    saved_payloads: list[object] = []
+
+    class _FakeRepository:
+        def __init__(self, session: object) -> None:  # noqa: ARG002
+            pass
+
+        async def upsert_by_source_notice_id(self, payload):  # type: ignore[no-untyped-def]
+            saved_payloads.append(payload)
+            return payload
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+            return None
+
+    monkeypatch.setattr(ingest_module, "SkuNoticeRepository", _FakeRepository)
+    monkeypatch.setattr(ingest_module, "SessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr(ingest_module, "init_db", AsyncMock())
+
+    service = SkuNoticeIngestService(
+        crawler=fake_crawler,  # type: ignore[arg-type]
+        summary_service=fake_summary,  # type: ignore[arg-type]
+        embedding_service=fake_embedding,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(service, "get_db_max_source_notice_id", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        service,
+        "get_existing_source_notice_ids",
+        AsyncMock(return_value=set()),
+    )
+
+    result = await service.run(max_candidates=10)
+
+    assert result["saved_count"] == 1
+    assert result["embedded_count"] == 1
+    assert len(saved_payloads) == 1
+    assert len(result["failed"]) == 1
+    assert result["failed"][0]["stage"] == "crawl"
+    assert result["failed"][0]["source_notice_id"] == 29
