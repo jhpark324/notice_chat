@@ -72,6 +72,19 @@ class SkuNoticeIngestService:
             value = await session.scalar(select(func.max(DBSkuNotice.source_notice_id)))
             return int(value) if value is not None else 0
 
+    async def get_existing_source_notice_ids(
+        self, source_notice_ids: list[int]
+    ) -> set[int]:
+        if not source_notice_ids:
+            return set()
+
+        async with SessionLocal() as session:
+            stmt = select(DBSkuNotice.source_notice_id).where(
+                DBSkuNotice.source_notice_id.in_(source_notice_ids)
+            )
+            result = await session.scalars(stmt)
+            return {int(value) for value in result.all()}
+
     @staticmethod
     @staticmethod
     def _utcnow() -> datetime:
@@ -106,14 +119,31 @@ class SkuNoticeIngestService:
     def _select_candidates(
         items: list[ListNoticeItem],
         *,
-        threshold: int,
+        existing_ids: set[int],
+        lookback_notice_id: int,
         max_candidates: int | None,
-    ) -> list[ListNoticeItem]:
-        candidates = [item for item in items if item.source_notice_id >= threshold]
-        candidates = sorted(candidates, key=lambda item: item.source_notice_id, reverse=True)
+    ) -> tuple[list[ListNoticeItem], int]:
+        if not items:
+            return [], 0
+
+        sorted_items = sorted(
+            items, key=lambda item: item.source_notice_id, reverse=True
+        )
+        scanned_max_source_notice_id = sorted_items[0].source_notice_id
+        refresh_threshold = max(0, scanned_max_source_notice_id - lookback_notice_id)
+
+        candidates: list[ListNoticeItem] = []
+        for item in sorted_items:
+            is_new = item.source_notice_id not in existing_ids
+            is_forced_refresh = (
+                lookback_notice_id > 0 and item.source_notice_id >= refresh_threshold
+            )
+            if is_new or is_forced_refresh:
+                candidates.append(item)
+
         if max_candidates is not None:
             candidates = candidates[:max_candidates]
-        return candidates
+        return candidates, refresh_threshold
 
     def _build_graph(self):
         workflow = StateGraph(SkuNoticeIngestState)
@@ -137,22 +167,20 @@ class SkuNoticeIngestService:
         )
 
         db_max_id = await self.get_db_max_source_notice_id()
-        threshold = max(0, db_max_id - lookback_notice_id)
-
-        logger.info(
-            "Crawl node start: db_max_source_notice_id=%s threshold=%s",
-            db_max_id,
-            threshold,
-        )
+        logger.info("Crawl node start: db_max_source_notice_id=%s", db_max_id)
 
         async with self.crawler.build_client() as client:
             list_items = await self.crawler.crawl_notice_list(
                 client,
                 pages_to_scan=pages_to_scan,
             )
-            candidates = self._select_candidates(
+            existing_ids = await self.get_existing_source_notice_ids(
+                [item.source_notice_id for item in list_items]
+            )
+            candidates, threshold = self._select_candidates(
                 list_items,
-                threshold=threshold,
+                existing_ids=existing_ids,
+                lookback_notice_id=lookback_notice_id,
                 max_candidates=max_candidates,
             )
             details = (

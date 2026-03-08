@@ -103,9 +103,37 @@ def _build_detail(notice_id: int) -> CrawledNotice:
     )
 
 
+async def test_select_candidates_uses_scanned_window_and_existing_ids() -> None:
+    items = [_build_list_item(15), _build_list_item(14), _build_list_item(13)]
+
+    candidates, threshold = SkuNoticeIngestService._select_candidates(  # noqa: SLF001
+        items,
+        existing_ids={14},
+        lookback_notice_id=0,
+        max_candidates=None,
+    )
+
+    assert threshold == 15
+    assert [item.source_notice_id for item in candidates] == [15, 13]
+
+
+async def test_select_candidates_includes_forced_refresh_window() -> None:
+    items = [_build_list_item(15), _build_list_item(14), _build_list_item(13)]
+
+    candidates, threshold = SkuNoticeIngestService._select_candidates(  # noqa: SLF001
+        items,
+        existing_ids={15, 14, 13},
+        lookback_notice_id=1,
+        max_candidates=None,
+    )
+
+    assert threshold == 14
+    assert [item.source_notice_id for item in candidates] == [15, 14]
+
+
 async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
     list_items = [_build_list_item(12), _build_list_item(11), _build_list_item(9)]
-    details = [_build_detail(12), _build_detail(11)]
+    details = [_build_detail(12), _build_detail(9)]
     fake_crawler = _FakeCrawler(list_items=list_items, details=details)
     fake_summary = _FakeSummaryService()
     fake_embedding = _FakeEmbeddingService()
@@ -138,6 +166,11 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
         default_detail_concurrency=7,
     )
     monkeypatch.setattr(service, "get_db_max_source_notice_id", AsyncMock(return_value=11))
+    monkeypatch.setattr(
+        service,
+        "get_existing_source_notice_ids",
+        AsyncMock(return_value={11}),
+    )
 
     result = await service.run(
         pages_to_scan=4,
@@ -147,7 +180,7 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
     )
 
     assert result["db_max_source_notice_id"] == 11
-    assert result["incremental_threshold"] == 11
+    assert result["incremental_threshold"] == 12
     assert result["crawled_list_rows"] == 3
     assert result["candidate_count"] == 2
     assert result["saved_count"] == 2
@@ -155,9 +188,9 @@ async def test_run_executes_graph_and_persists_candidates(monkeypatch: pytest.Mo
     assert result["failed"] == []
     assert fake_crawler.list_calls == [4]
     assert fake_crawler.detail_calls == [(2, 3)]
-    assert fake_summary.calls == [12, 11]
-    assert fake_embedding.calls == [12, 11]
-    assert [payload.source_notice_id for payload in saved_payloads] == [12, 11]
+    assert fake_summary.calls == [12, 9]
+    assert fake_embedding.calls == [12, 9]
+    assert [payload.source_notice_id for payload in saved_payloads] == [12, 9]
     assert all(payload.embedding is not None for payload in saved_payloads)
     assert all(payload.embedding_updated_at is not None for payload in saved_payloads)
 
@@ -196,6 +229,11 @@ async def test_run_records_failure_when_summary_raises(
         summary_service=_RaisingSummaryService(),  # type: ignore[arg-type]
     )
     monkeypatch.setattr(service, "get_db_max_source_notice_id", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        service,
+        "get_existing_source_notice_ids",
+        AsyncMock(return_value=set()),
+    )
 
     result = await service.run()
 
