@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from notice_chat.models import DBSkuNotice
@@ -43,6 +44,75 @@ class SkuNoticeRepository:
         if status is not None:
             stmt = stmt.where(DBSkuNotice.status == status)
         stmt = stmt.offset(offset).limit(limit)
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def search_text(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        category: str | None = None,
+        author_org: str | None = None,
+        posted_from: date | None = None,
+        posted_to: date | None = None,
+        status: str | None = None,
+    ) -> Sequence[DBSkuNotice]:
+        stmt = select(DBSkuNotice)
+
+        normalized_query = query.strip()
+        if normalized_query:
+            pattern = f"%{normalized_query}%"
+            stmt = stmt.where(
+                or_(
+                    DBSkuNotice.title.ilike(pattern),
+                    DBSkuNotice.summary_text.ilike(pattern),
+                )
+            )
+
+        if category is not None:
+            stmt = stmt.where(DBSkuNotice.category == category)
+        if author_org is not None:
+            stmt = stmt.where(DBSkuNotice.author_org == author_org)
+        if posted_from is not None:
+            stmt = stmt.where(DBSkuNotice.posted_date >= posted_from)
+        if posted_to is not None:
+            stmt = stmt.where(DBSkuNotice.posted_date <= posted_to)
+        if status is not None:
+            stmt = stmt.where(DBSkuNotice.status == status)
+
+        stmt = stmt.order_by(DBSkuNotice.posted_date.desc(), DBSkuNotice.id.desc()).limit(
+            limit
+        )
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def list_semantic_candidates(
+        self,
+        *,
+        limit: int = 200,
+        category: str | None = None,
+        author_org: str | None = None,
+        posted_from: date | None = None,
+        posted_to: date | None = None,
+        status: str | None = None,
+    ) -> Sequence[DBSkuNotice]:
+        stmt = select(DBSkuNotice).where(DBSkuNotice.embedding.is_not(None))
+
+        if category is not None:
+            stmt = stmt.where(DBSkuNotice.category == category)
+        if author_org is not None:
+            stmt = stmt.where(DBSkuNotice.author_org == author_org)
+        if posted_from is not None:
+            stmt = stmt.where(DBSkuNotice.posted_date >= posted_from)
+        if posted_to is not None:
+            stmt = stmt.where(DBSkuNotice.posted_date <= posted_to)
+        if status is not None:
+            stmt = stmt.where(DBSkuNotice.status == status)
+
+        stmt = stmt.order_by(DBSkuNotice.posted_date.desc(), DBSkuNotice.id.desc()).limit(
+            limit
+        )
         result = await self.session.scalars(stmt)
         return list(result.all())
 
