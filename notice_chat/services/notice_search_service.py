@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import date
 from typing import Any, TypedDict
 
+from langsmith import traceable
 from langgraph.graph import END, START, StateGraph
 
 from .notice_search_models import (
@@ -90,6 +91,11 @@ class NoticeSearchService:
             logger.exception("semantic_search failed")
             return {"semantic_results": [], "semantic_error": repr(exc)}
 
+    @traceable(
+        name="notice_search.merge_results",
+        run_type="chain",
+        tags=["notice-search", "merge"],
+    )
     def _merge_node(self, state: NoticeSearchState) -> NoticeSearchState:
         text_results = state.get("text_results", [])
         semantic_results = state.get("semantic_results", [])
@@ -151,6 +157,11 @@ class NoticeSearchService:
 
         return {"results": ranked[:top_k], "mode": mode, "errors": errors}
 
+    @traceable(
+        name="notice_search.search_notices",
+        run_type="chain",
+        tags=["notice-search"],
+    )
     async def search_notices(
         self,
         *,

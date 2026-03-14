@@ -5,6 +5,7 @@ import re
 from datetime import date
 from typing import Protocol
 
+from langsmith import traceable
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from notice_chat.db import SessionLocal
@@ -68,6 +69,11 @@ class TextSqlSearchTool:
     ) -> None:
         self.session_factory = session_factory
 
+    @traceable(
+        name="notice_search.text_sql_search",
+        run_type="retriever",
+        tags=["notice-search", "sql"],
+    )
     async def search(
         self,
         *,
@@ -119,6 +125,11 @@ class SemanticSearchTool:
         self.session_factory = session_factory
         self.candidate_pool_size = candidate_pool_size
 
+    @traceable(
+        name="notice_search.semantic_search",
+        run_type="retriever",
+        tags=["notice-search", "semantic"],
+    )
     async def search(
         self,
         *,
