@@ -9,10 +9,12 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any, Protocol
 
+from langsmith import traceable
 from mcp.server.fastmcp import FastMCP
 
 from notice_chat.db import SessionLocal, close_db, init_db
 from notice_chat.models import DBSkuNotice
+from notice_chat.observability import configure_langsmith
 from notice_chat.repositories import SkuNoticeRepository
 from notice_chat.services import NoticeSearchFilters, NoticeSearchService
 
@@ -127,20 +129,17 @@ def create_notice_mcp_server(
         lifespan=server_lifespan if enable_lifespan else None,
     )
 
-    @server.tool(
-        name="search_notices",
-        description="Search notices with hybrid ranking (keyword + semantic + recency).",
-        structured_output=True,
-    )
-    async def search_notices(
+    @traceable(name="mcp.search_notices", run_type="tool", tags=["mcp", "notice-search"])
+    async def _run_search_notices(
+        *,
         query: str,
-        top_k: int = 10,
-        category: str | None = None,
-        author_org: str | None = None,
-        posted_from: str | None = None,
-        posted_to: str | None = None,
-        status: str | None = None,
-        include_reason: bool = True,
+        top_k: int,
+        category: str | None,
+        author_org: str | None,
+        posted_from: str | None,
+        posted_to: str | None,
+        status: str | None,
+        include_reason: bool,
     ) -> dict[str, Any]:
         if top_k < 1:
             raise ValueError("top_k must be >= 1")
@@ -160,12 +159,12 @@ def create_notice_mcp_server(
         )
         return _jsonify(result)
 
-    @server.tool(
-        name="get_notice_detail",
-        description="Get a single notice by source_notice_id.",
-        structured_output=True,
+    @traceable(
+        name="mcp.get_notice_detail",
+        run_type="tool",
+        tags=["mcp", "notice-detail"],
     )
-    async def get_notice_detail(source_notice_id: int) -> dict[str, Any]:
+    async def _run_get_notice_detail(*, source_notice_id: int) -> dict[str, Any]:
         if source_notice_id < 1:
             raise ValueError("source_notice_id must be >= 1")
 
@@ -177,16 +176,17 @@ def create_notice_mcp_server(
             return {"found": False, "notice": None}
         return {"found": True, "notice": _serialize_notice(notice)}
 
-    @server.tool(
-        name="list_recent_notices",
-        description="List recent notices ordered by posted_date desc.",
-        structured_output=True,
+    @traceable(
+        name="mcp.list_recent_notices",
+        run_type="tool",
+        tags=["mcp", "notice-list"],
     )
-    async def list_recent_notices(
-        limit: int = 20,
-        offset: int = 0,
-        category: str | None = None,
-        status: str | None = None,
+    async def _run_list_recent_notices(
+        *,
+        limit: int,
+        offset: int,
+        category: str | None,
+        status: str | None,
     ) -> dict[str, Any]:
         if limit < 1:
             raise ValueError("limit must be >= 1")
@@ -211,6 +211,58 @@ def create_notice_mcp_server(
             "items": items,
         }
 
+    @server.tool(
+        name="search_notices",
+        description="Search notices with hybrid ranking (keyword + semantic + recency).",
+        structured_output=True,
+    )
+    async def search_notices(
+        query: str,
+        top_k: int = 10,
+        category: str | None = None,
+        author_org: str | None = None,
+        posted_from: str | None = None,
+        posted_to: str | None = None,
+        status: str | None = None,
+        include_reason: bool = True,
+    ) -> dict[str, Any]:
+        return await _run_search_notices(
+            query=query,
+            top_k=top_k,
+            category=category,
+            author_org=author_org,
+            posted_from=posted_from,
+            posted_to=posted_to,
+            status=status,
+            include_reason=include_reason,
+        )
+
+    @server.tool(
+        name="get_notice_detail",
+        description="Get a single notice by source_notice_id.",
+        structured_output=True,
+    )
+    async def get_notice_detail(source_notice_id: int) -> dict[str, Any]:
+        return await _run_get_notice_detail(source_notice_id=source_notice_id)
+
+    @server.tool(
+        name="list_recent_notices",
+        description="List recent notices ordered by posted_date desc.",
+        structured_output=True,
+    )
+    async def list_recent_notices(
+        limit: int = 20,
+        offset: int = 0,
+        category: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        return await _run_list_recent_notices(
+            limit=limit,
+            offset=offset,
+            category=category,
+            status=status,
+        )
+
     return server
 
 
@@ -219,6 +271,7 @@ def run_notice_mcp_server(
     settings: SkuNoticeMCPSettings | None = None,
 ) -> None:
     _configure_windows_event_loop_policy()
+    configure_langsmith()
     resolved_settings = settings or SKU_NOTICE_MCP_SETTINGS
     logging.basicConfig(level=resolved_settings.log_level)
     server = create_notice_mcp_server(settings=resolved_settings)
