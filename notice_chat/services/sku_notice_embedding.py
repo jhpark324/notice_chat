@@ -22,6 +22,9 @@ def truncate_text(value: str, max_chars: int) -> str:
 
 
 class NoticeEmbeddingService(Protocol):
+    async def embed_query(self, query: str) -> list[float] | None:
+        raise NotImplementedError
+
     async def embed_notice(
         self,
         notice: CrawledNotice,
@@ -105,4 +108,21 @@ class LangChainNoticeEmbeddingService:
                 "Embedding generation failed for source_notice_id=%s",
                 notice.source_notice_id,
             )
+            return None
+
+    async def embed_query(self, query: str) -> list[float] | None:
+        if self._embeddings is None:
+            return None
+
+        normalized_query = query.strip()
+        if not normalized_query:
+            return None
+
+        try:
+            vector = await self._embeddings.aembed_query(
+                truncate_text(normalized_query, self.max_input_chars)
+            )
+            return [float(value) for value in vector]
+        except Exception:
+            logger.exception("Query embedding generation failed")
             return None
