@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any, Protocol
 
+from langsmith import traceable
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
@@ -70,6 +71,11 @@ class LangChainNoticeSummaryService:
         source = notice.raw_text or notice.title
         return truncate_text(source, self.fallback_chars)
 
+    @traceable(
+        name="notice_summary.summarize",
+        run_type="chain",
+        tags=["summary", "notice"],
+    )
     async def summarize(self, notice: CrawledNotice) -> str:
         if self._chain is None:
             return self._fallback_summary(notice)

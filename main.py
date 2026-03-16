@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from notice_chat.db import close_db, init_db
+from notice_chat.observability import configure_langsmith
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_langsmith()
     logger.info("Application startup: initializing database")
     await init_db()
     logger.info("Application startup complete")

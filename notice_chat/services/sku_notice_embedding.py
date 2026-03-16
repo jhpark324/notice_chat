@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any, Protocol
 
+from langsmith import traceable
 from langchain_openai import OpenAIEmbeddings
 
 from .sku_notice_crawler import CrawledNotice
@@ -90,6 +91,11 @@ class LangChainNoticeEmbeddingService:
             self.max_input_chars,
         )
 
+    @traceable(
+        name="notice_embedding.embed_notice",
+        run_type="embedding",
+        tags=["embedding", "notice"],
+    )
     async def embed_notice(
         self,
         notice: CrawledNotice,
@@ -110,6 +116,11 @@ class LangChainNoticeEmbeddingService:
             )
             return None
 
+    @traceable(
+        name="notice_embedding.embed_query",
+        run_type="embedding",
+        tags=["embedding", "query"],
+    )
     async def embed_query(self, query: str) -> list[float] | None:
         if self._embeddings is None:
             return None
