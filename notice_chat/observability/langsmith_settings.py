@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +16,13 @@ class LangSmithSettings(BaseSettings):
         populate_by_name=True,
     )
 
-    tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")
+    tracing: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LANGSMITH_TRACING",
+            "LANGSMITH_TRACING_V2",
+        ),
+    )
     api_key: str | None = Field(default=None, validation_alias="LANGSMITH_API_KEY")
     endpoint: str | None = Field(default=None, validation_alias="LANGSMITH_ENDPOINT")
     project: str | None = Field(default=None, validation_alias="LANGSMITH_PROJECT")
