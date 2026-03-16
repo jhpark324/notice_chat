@@ -26,11 +26,6 @@ class NoticeEmbeddingService(Protocol):
     async def embed_query(self, query: str) -> list[float] | None:
         raise NotImplementedError
 
-    @traceable(
-        name="notice_embedding.embed_notice",
-        run_type="embedding",
-        tags=["embedding", "notice"],
-    )
     async def embed_notice(
         self,
         notice: CrawledNotice,
@@ -96,6 +91,11 @@ class LangChainNoticeEmbeddingService:
             self.max_input_chars,
         )
 
+    @traceable(
+        name="notice_embedding.embed_notice",
+        run_type="embedding",
+        tags=["embedding", "notice"],
+    )
     async def embed_notice(
         self,
         notice: CrawledNotice,

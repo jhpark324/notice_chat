@@ -4,7 +4,11 @@ from datetime import date
 
 import pytest
 
-from notice_chat.services import CrawledNotice, LangChainNoticeEmbeddingService
+from notice_chat.services import (
+    CrawledNotice,
+    LangChainNoticeEmbeddingService,
+    NoticeEmbeddingService,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
@@ -24,6 +28,13 @@ def _build_notice() -> CrawledNotice:
         raw_text="신청 대상은 재학생이며 신청 기간 내 제출 바랍니다.",
         image_urls=[],
         attachments=[],
+    )
+
+
+async def test_embed_notice_is_traced_on_concrete_implementation() -> None:
+    assert not hasattr(NoticeEmbeddingService.embed_notice, "__langsmith_traceable__")
+    assert hasattr(
+        LangChainNoticeEmbeddingService.embed_notice, "__langsmith_traceable__"
     )
 
 
